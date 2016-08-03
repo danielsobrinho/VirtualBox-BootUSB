@@ -1,0 +1,243 @@
+#!/bin/bash
+
+## Script criado com base no VirtualBox v. 4.2.10, mas há suporte às outras versões
+## Autor: Marcelo Klumpp <Elppans Dark Elven>, elppansmk@gmail.com
+
+
+PA="$1" # -d
+PB="$2" # device
+PC="$3" # -o
+PD="$4" # Arquivo de sistema
+PE="$5" # -m
+PF="$6" # memoria
+PG="$7" # -e
+PH="$8" # ethernet
+
+if [ "$PA" = "-d" ]; then # Parâmetro 1 (Inicio)
+if [ "$PC" = "-o" ]; then # Parâmetro 3 (Inicio)
+if [ "$PE" = "-m" ]; then # Parâmetro 5 (Inicio)
+if [ -n "$PF" ]; then # Parâmetro 6 (Inicio - não nulo)
+if [ "$PF" -gt "0" ]; then # Parâmetro 6 (Inicio - maior que)
+if [ -n "$PD" ]; then # Parâmetro 4 (Inicio - não nulo)
+if [ "$PD" -gt "0" ]; then # Parâmetro 4 (Inicio - maior que)
+if [ -n "$PB" ]; then # Parâmetro 2 (Inicio - não nulo)
+
+#if to case
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+	PA="$1"
+   elif [ "$1" = "-nw" ] || [ "$1" = "--net-who" ]; then
+	PA="$1"
+else
+#su
+      if [ "$(id -u)" != "0" ]; then
+	echo "Deve executar o comando $0 como super usuário!"
+	exit 0
+      fi
+#su
+fi
+#if to case
+
+#System File
+SYSFILE="$PD"
+if [ "$SYSFILE" = 32 ]; then
+	OSTYP=Other
+elif [ "$SYSFILE" = 64 ]; then
+	OSTYP=Other_64
+else
+	echo -e "\nDeve especificar o tipo do sistema de arquivos...\nDigite $0 {--help|-h} para mais detalhes!"
+	exit 0
+fi
+#System File - fim
+
+DEV="$PB"
+MEM="$PF"
+VRAM=64
+
+mkdir -p /tmp
+mkdir -p ~/VirtualBox\ VMs
+VBL=/tmp/vbnet.log
+UBL=/tmp/usb.log
+# Criando arquivo usb.log
+
+touch $UBL
+echo $DEV > $UBL
+
+# Criando arquivo vbnet.log
+
+VBoxManage list bridgedifs | grep -i "VBoxNetworkName" | cut -d "-" -f "2" > $VBL
+
+# Agrupando usb.log e vbnet.log como parâmetros
+
+USBD=$(cat $UBL | cut -d "/" -f "3" | cut -d "1" -f "1") # Ex.: sdd
+USBL=$(cat $UBL | cut -d "/" -f "3") # Ex.: sdd1
+USBP=$(cat $UBL | cut -d "1" -f "1") # Ex.: /dev/sdd
+USBDD=$(cat $UBL) # Ex.: /dev/sdd1
+BNET="cat $VBL" # Ex.: eth0 enp2s0 etc
+CNET=$($BNET | head -1) # Ex.: eth0
+
+# Setando Interface para a Maquina Virtual
+
+#ethernet
+if [ "$PG" = "-e" ]; then
+#opt interface
+if [ -n "$PH" ]; then
+#set interface
+if [ $PH == "$($BNET | grep "$PH" )" ];then
+	VBFACE=$PH
+else
+	echo -e "A interface não é válida\nDigite $0 {--net-who|-nw} para listar as interfaces válidas!"
+	exit 0
+fi
+#set interface
+fi
+#opt interface
+else
+	VBFACE="$CNET"
+fi
+
+#ethernet
+
+# Iniciando configurações para a Máquina Virtual
+
+echo -e "\nDesmontando o device $USBDD para configurar a Máquina Virtual...\n"
+
+
+umount $USBDD >> /dev/null 2>&1 ;
+chmod 777 $USBP* ;
+
+echo -e "Linkando device $USBD para a Máquina Virtual...\n"
+
+
+VBoxManage internalcommands createrawvmdk -filename ~/VirtualBox\ VMs/$USBL.vmdk -rawdisk $USBP
+
+# Nova máquina com nome vbox$USBL, para o sistema operacional linux na pasta ~/VirtualBox\ VMs/
+
+echo -e "Criando Maquina Virtual para o dispositivo $USBL...\n"
+
+
+VBoxManage createvm --name vbox$USBL --ostype $OSTYP --register --basefolder ~/VirtualBox\ VMs/
+
+# Definir que a máquina WinXP recém criada terá 1050Mb de RAM, 64Mb de Vídeo, acpi ligado, placa de rede em modo bridged no dispositivo eth0
+# Com modo promíscuo da placa de rede totalmente liberada
+
+echo -e "\nConfigurando Máquina Virtual vbox$USBL...\n"
+
+
+echo -e "Usando a interface "$VBFACE" para a Máquina Virtual...\n"
+
+
+#VBoxManage modifyvm "vbox$USBL" --memory 1050 --vram 64 --acpi on --vbox1 dvd --nic1 bridged --bridgeadapter1 eth0 --nicpromisc1 allow-all
+VBoxManage modifyvm "vbox$USBL" --memory $MEM --vram $VRAM --acpi on --nic1 bridged --bridgeadapter1 $VBFACE --nicpromisc1 allow-all
+
+# Anexar o HD à nossa máquina:
+
+echo -e "Anexando dispositivo $USBL na Máquina Virtual vbox$USBL...\n"
+
+
+VBoxManage storagectl vbox$USBL --name "SATA Controller" --add sata
+VBoxManage storageattach vbox$USBL --storagectl "SATA Controller" --port 0 --device 0 --type hdd --medium ~/VirtualBox\ VMs/$USBL.vmdk
+
+# Iniciando a Máquina Virtual Recém criada
+
+echo -e "Iniciando Máquina Virtual vbox$USBL...\n"
+
+
+VirtualBox --startvm vbox$USBL >> /dev/null 2>&1
+
+# Removendo a Máquina Virtual após o uso
+
+echo -e "Removendo vestígios da Máquina Virtual vbox$USBL...\n"
+
+
+VBoxManage unregistervm vbox$USBL --delete
+
+# Removendo arquivos de log criados
+
+rm -rf $UBL
+rm -rf $VBL
+
+# parâmetro if (contra parâmetros)
+
+	else # Parametro 2 (Contra resposta - não nulo)
+	echo "Para usar o aplicativo digite o comando com parâmetro(s) corretos..."
+	echo -e "Digite o comando $0 {--help|-h} para mais detalhes!"
+fi # Parametro 2 (FIM - vazio)
+	else # Parametro 4 (Contra resposta - maior que)
+	echo "Para usar o aplicativo digite o comando com parâmetro(s) corretos..."
+	echo -e "Digite o comando $0 {--help|-h} para mais detalhes!"
+	fi # Parametro 4 (FIM - maior que)
+	else # Parametro 4 (Contra resposta - não nulo)
+	echo "Para usar o aplicativo digite o comando com parâmetro(s) corretos..."
+	echo -e "Digite o comando $0 {--help|-h} para mais detalhes!"
+fi # Parametro 4 (FIM - vazio)
+	else # Parametro 6 (Contra resposta - maior que)
+	echo "Para usar o aplicativo digite o comando com parâmetro(s) corretos..."
+	echo -e "Digite o comando $0 {--help|-h} para mais detalhes!"
+	fi # Parametro 6 (FIM - maior que)
+	else # Parametro 6 (Contra resposta - não nulo)
+	echo "Para usar o aplicativo digite o comando com parâmetro(s) corretos..."
+	echo -e "Digite o comando $0 {--help|-h} para mais detalhes!"
+fi # Parametro 6 (FIM - vazio)
+	else # Parametro 5 (Contra resposta -m)
+	echo "Para usar o aplicativo digite o comando com parâmetro(s) corretos..."
+	echo -e "Digite o comando $0 {--help|-h} para mais detalhes!"
+fi # Parametro 5 (FIM)
+	else # Parametro 3 (Contra resposta -p)
+	echo "Para usar o aplicativo digite o comando com parâmetro(s) corretos..."
+	echo -e "Digite o comando $0 {--help|-h} para mais detalhes!"
+fi # Parametro 3 (FIM)
+	else # Parametro 1 (Contra resposta -d)
+#	echo "Parâmetro 1 NOK! - deve usar -d"
+# Parâmetro case para parâmetro 1
+case $@ in
+	--help|-h)
+	echo -e "
+VirtualBox-BootUSB.
+Um comando via terminal para chamar o aplicativo Virtual Box para uso de testes com o device bootável.
+Facilita no teste de um boot via USB que está criando ou que já tenha criado, de forma simples.
+
+Uso:	VirtualBox-BootUSB [OPÇÃO]
+
+Opções:
+
+-d			Device. Com este parâmetro é necessário indicar qual o device a ser iniciado. Exemplo: /dev/sd{[a-z][0-9]}
+-o			Plataforma. Opção para iniciar a máquina como 32 ou 64 bits: {32|64}
+-m			Memória, em MB. Indica quanto de memória usar para o teste, alguns instaladores/sistemas usam mais e outros menos memória.
+-e			Ethernet (OPCIONAL). Setar qual Interface de Rede usar, se omitido é usado a 1ª interface listado automático.
+--net-who|-nw		Interfaces. Lista as Interfaces de Rede para uso no Virtual Box. 
+--help|-h		Este menú de ajuda
+
+Exemplo de uso:
+
+Listar Interfaces:
+
+VirtualBox-BootUSB -nw
+
+Resultado:
+eth0
+wlan0
+vmnet1
+vmnet8
+
+Testar um device usb-boot  usando plataforma 32 bits e interface de rede wlan0:
+
+VirtualBox-BootUSB -d /dev/sdX1 -o 32 -m 1024 -e wlan0
+
+Sendo "X" o device, "1" o número da partição e "1024" a quantidade da memória (em MB).
+"
+		;;
+	--net-who|-nw)
+	echo -e "Listando interfaces para uso no VirtualBox..."
+VBoxManage list bridgedifs | grep -i "VBoxNetworkName" | cut -d "-" -f "2"
+	exit 0
+;;
+	*)
+	echo "Para usar o aplicativo digite o comando com parâmetro(s) corretos..."
+	echo -e "Digite o comando $0 {--help|-h} para mais detalhes!"
+		;;
+esac
+exit
+# Parâmetro case para parâmetro 1 - FIM
+fi # Parametro 1 (FIM)
+
+### Parametro if (FIM)
